@@ -1,0 +1,16 @@
+{
+  "name": "dynamodb-playground",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.529.1",
+    "@aws-sdk/util-dynamodb": "^3.529.1",
+    "nanoid": "^5.0.6"
+  }
+}
