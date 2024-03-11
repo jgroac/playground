@@ -18,15 +18,14 @@ const createTableIfMissing = async (schema: CreateTableCommandInput) => {
   const describeTable = new DescribeTableCommand({
     TableName: schema.TableName,
   });
-  let table = await dynamo.send(describeTable);
 
-  if (table) {
+  try {
+    const table = await dynamo.send(describeTable);
+    return table;
+  } catch (err) {
+    const table = await dynamo.createTable(schema);
     return table;
   }
-
-  table = await dynamo.createTable(schema);
-
-  return table;
 };
 
 async function Test() {
@@ -38,7 +37,7 @@ async function Test() {
     ],
     AttributeDefinitions: [
       { AttributeName: "articleId", AttributeType: "S" },
-      { AttributeName: "themeCount", AttributeType: "N" },
+      { AttributeName: "themeCount", AttributeType: "S" },
     ],
     ProvisionedThroughput: {
       ReadCapacityUnits: 5,
@@ -49,30 +48,46 @@ async function Test() {
   const uuid = nanoid(8);
   console.log({ table: table.Table?.TableName, uuid });
 
-  const updateCmd = new UpdateItemCommand({
-    TableName: "article_interactions",
-    Key: {
-      articleId: { S: "Im1H1w20" },
-      themeCount: { S: "10" },
-    },
-    UpdateExpression:
-      "ADD thumbsUp :thumbsUp, thumbsDown :thumbsDown, neutral :neutral SET theme = :theme",
-    ExpressionAttributeValues: {
-      ":thumbsUp": { N: "5" },
-      ":thumbsDown": { N: "0" },
-      ":neutral": { N: "0" },
-      ":theme": { S: "science fiction" },
-    },
-    ReturnValues: "ALL_NEW",
+  const ids = [nanoid(8), nanoid(8), nanoid(8), nanoid(8), nanoid(8)];
+  const themes = ["science", "science_fiction", "tech", "twitch", "AI"];
+  const articles = Array.from(new Array(300)).map(() => {
+    const random = () => Math.round(Math.random() * 4);
+    const id = ids[random()];
+    const theme = themes[random()];
+    if (!id || !theme) {
+      throw new Error(`id or theme undefined ${id}, ${theme}, ${random}`);
+    }
+    const thumbsUp = Math.round(Math.random() * 50);
+    const thumbsDown = Math.round(Math.random() * 25);
+    const neutral = Math.round(Math.random() * 100);
+
+    const item = new UpdateItemCommand({
+      TableName: "article_interactions",
+      Key: {
+        articleId: { S: id },
+        themeCount: { S: theme },
+      },
+      UpdateExpression:
+        "ADD thumbsUp :thumbsUp, thumbsDown :thumbsDown, neutral :neutral",
+      ExpressionAttributeValues: {
+        ":thumbsUp": { N: thumbsUp.toString() },
+        ":thumbsDown": { N: thumbsDown.toString() },
+        ":neutral": { N: neutral.toString() },
+      },
+      ReturnValues: "ALL_NEW",
+    });
+    return item;
   });
 
-  const updateResult = await dynamo.send(updateCmd);
+  // await dynamo.send(articles[0]);
 
-  console.log({ updateResult: updateResult.Attributes });
+  // for (const articleCommand of articles) {
+  //   await dynamo.send(articleCommand);
+  // }
 
   const command = new ScanCommand({
     TableName: "article_interactions",
-    Limit: 10,
+    Limit: 100,
   });
 
   const result = await dynamo.send(command);
