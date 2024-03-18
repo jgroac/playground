@@ -86,11 +86,15 @@ async function readTop10ArticlesByInteraction() {
       ":articleId": { S: "ZO0S92vE" },
     },
     ScanIndexForward: false,
-    Limit: 10,
+    Limit: 5,
+    ReturnConsumedCapacity: "TOTAL",
   });
 
   const results = await dynamo.send(query);
-  console.log({ result: results.Items?.map((i) => unmarshall(i)) });
+  console.log({
+    result: results.Items?.map((i) => unmarshall(i)),
+    capacity: results.ConsumedCapacity,
+  });
 
   return results.Items?.map((i) => unmarshall(i)) as Article[];
 }
@@ -105,13 +109,13 @@ async function fetchTopArticlesAttrs(topArticles: Article[]) {
     articleId: { S: a.articleId },
     theme: { S: a.theme },
   }));
-  console.log(keys);
   const batchGetItems = new BatchGetItemCommand({
     RequestItems: {
       [TableName]: {
         Keys: keys,
       },
     },
+    ReturnConsumedCapacity: "TOTAL",
   });
 
   const r = await dynamo.send(batchGetItems);
