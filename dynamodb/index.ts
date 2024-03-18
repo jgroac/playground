@@ -3,6 +3,7 @@ import {
   CreateTableCommandInput,
   DescribeTableCommand,
   DynamoDB,
+  QueryCommand,
   ScanCommand,
   UpdateItemCommand,
 } from "@aws-sdk/client-dynamodb";
@@ -13,6 +14,8 @@ const dynamo = new DynamoDB({
   region: "eu-west-1",
   endpoint: "http://127.0.0.1:8888",
 });
+
+const TableName = "article_interactions";
 
 const createTableIfMissing = async (schema: CreateTableCommandInput) => {
   const describeTable = new DescribeTableCommand({
@@ -30,24 +33,65 @@ const createTableIfMissing = async (schema: CreateTableCommandInput) => {
 
 async function Test() {
   const table = await createTableIfMissing({
-    TableName: "article_interactions",
+    TableName: TableName,
     KeySchema: [
       { AttributeName: "articleId", KeyType: "HASH" },
-      { AttributeName: "themeCount", KeyType: "RANGE" },
+      { AttributeName: "theme", KeyType: "RANGE" },
     ],
     AttributeDefinitions: [
       { AttributeName: "articleId", AttributeType: "S" },
-      { AttributeName: "themeCount", AttributeType: "S" },
+      { AttributeName: "theme", AttributeType: "S" },
+      { AttributeName: "interactionCount", AttributeType: "N" },
     ],
     ProvisionedThroughput: {
       ReadCapacityUnits: 5,
       WriteCapacityUnits: 5,
     },
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: "interactionCountIndex",
+        KeySchema: [
+          { AttributeName: "articleId", KeyType: "HASH" },
+          { AttributeName: "interactionCount", KeyType: "RANGE" },
+        ],
+        Projection: {
+          ProjectionType: "KEYS_ONLY",
+        },
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 5,
+          WriteCapacityUnits: 5,
+        },
+      },
+    ],
   });
 
-  const uuid = nanoid(8);
-  console.log({ table: table.Table?.TableName, uuid });
+  console.log({ table: table.Table?.TableName });
 
+  // await fillTableWithArticles();
+
+  await queryAll();
+
+  console.log("-----------------");
+  await readTop10ArticlesByInteraction();
+}
+
+async function readTop10ArticlesByInteraction() {
+  const query = new QueryCommand({
+    TableName: TableName,
+    IndexName: "interactionCountIndex",
+    KeyConditionExpression: "articleId = :articleId",
+    ExpressionAttributeValues: {
+      ":articleId": { S: "ZO0S92vE" },
+    },
+    ScanIndexForward: false,
+    Limit: 10,
+  });
+
+  const results = await dynamo.send(query);
+  console.log({ result: results.Items?.map((i) => unmarshall(i)) });
+}
+
+async function fillTableWithArticles() {
   const ids = [nanoid(8), nanoid(8), nanoid(8), nanoid(8), nanoid(8)];
   const themes = ["science", "science_fiction", "tech", "twitch", "AI"];
   const articles = Array.from(new Array(300)).map(() => {
@@ -62,14 +106,18 @@ async function Test() {
     const neutral = Math.round(Math.random() * 100);
 
     const item = new UpdateItemCommand({
-      TableName: "article_interactions",
+      TableName: TableName,
       Key: {
         articleId: { S: id },
-        themeCount: { S: theme },
+        theme: { S: theme },
       },
       UpdateExpression:
-        "ADD thumbsUp :thumbsUp, thumbsDown :thumbsDown, neutral :neutral",
+        "ADD thumbsUp :thumbsUp, thumbsDown :thumbsDown, neutral :neutral, interactionCount :interactionCount SET themeName = :themeName",
       ExpressionAttributeValues: {
+        ":themeName": { S: theme },
+        ":interactionCount": {
+          N: (thumbsUp + thumbsDown + neutral).toString(),
+        },
         ":thumbsUp": { N: thumbsUp.toString() },
         ":thumbsDown": { N: thumbsDown.toString() },
         ":neutral": { N: neutral.toString() },
@@ -79,19 +127,37 @@ async function Test() {
     return item;
   });
 
-  // await dynamo.send(articles[0]);
+  await dynamo.send(articles[0]);
 
-  // for (const articleCommand of articles) {
-  //   await dynamo.send(articleCommand);
-  // }
+  for (const articleCommand of articles) {
+    await dynamo.send(articleCommand);
+  }
+}
 
+async function queryAll() {
+  // Query all
   const command = new ScanCommand({
-    TableName: "article_interactions",
+    TableName: TableName,
     Limit: 100,
   });
 
   const result = await dynamo.send(command);
   console.log({ result: result.Items?.map((i) => unmarshall(i)) });
+}
+
+async function queryByArticleId(articleId: string) {
+  // Query all themes for an article
+  const queryCmd = new QueryCommand({
+    TableName: TableName,
+    KeyConditionExpression: "articleId = :articleId",
+    ExpressionAttributeValues: {
+      // Use an existing id
+      ":articleId": { S: articleId },
+    },
+  });
+
+  const r = await dynamo.send(queryCmd);
+  console.log({ result: r.Items?.map((i) => unmarshall(i)) });
 }
 
 Test();
