@@ -1,4 +1,5 @@
 import {
+  BatchGetItemCommand,
   CreateTableCommand,
   CreateTableCommandInput,
   DescribeTableCommand,
@@ -72,7 +73,8 @@ async function Test() {
   await queryAll();
 
   console.log("-----------------");
-  await readTop10ArticlesByInteraction();
+  const topArticles = await readTop10ArticlesByInteraction();
+  await fetchTopArticlesAttrs(topArticles);
 }
 
 async function readTop10ArticlesByInteraction() {
@@ -89,6 +91,34 @@ async function readTop10ArticlesByInteraction() {
 
   const results = await dynamo.send(query);
   console.log({ result: results.Items?.map((i) => unmarshall(i)) });
+
+  return results.Items?.map((i) => unmarshall(i)) as Article[];
+}
+
+type Article = {
+  articleId: string;
+  theme: string;
+};
+
+async function fetchTopArticlesAttrs(topArticles: Article[]) {
+  const keys = topArticles.map((a) => ({
+    articleId: { S: a.articleId },
+    theme: { S: a.theme },
+  }));
+  console.log(keys);
+  const batchGetItems = new BatchGetItemCommand({
+    RequestItems: {
+      [TableName]: {
+        Keys: keys,
+      },
+    },
+  });
+
+  const r = await dynamo.send(batchGetItems);
+  console.log({
+    result: r.Responses?.article_interactions.map((i) => unmarshall(i)),
+    consumedCapacity: r.ConsumedCapacity,
+  });
 }
 
 async function fillTableWithArticles() {
